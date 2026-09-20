@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ur" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>سماعت مددگار</title>
+<style>
+  :root{--bg:#0f1b2d;--card:#182a44;--accent:#22c55e;--stop:#ef4444;--text:#f1f5f9;--muted:#94a3b8}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",system-ui,sans-serif;line-height:2;padding:16px;min-height:100vh}
+  h1{text-align:center;font-size:1.5rem;margin:8px 0 4px}
+  .sub{text-align:center;color:var(--muted);font-size:.95rem;margin-bottom:16px}
+  .card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:14px}
+  .warn{border:2px solid #f59e0b;color:#fde68a;font-size:.95rem}
+  #btn{width:100%;font-size:1.6rem;font-family:inherit;padding:22px;border:none;border-radius:20px;background:var(--accent);color:#04210f;font-weight:bold}
+  #btn.on{background:var(--stop);color:#fff}
+  label{display:flex;justify-content:space-between;font-size:1.05rem}
+  input[type=range]{width:100%;height:36px;accent-color:var(--accent);direction:ltr}
+  select{width:100%;padding:12px;font-size:1rem;border-radius:12px;background:#0f1b2d;color:var(--text);border:1px solid #334a6b;font-family:inherit}
+  .meter{height:18px;background:#0f1b2d;border-radius:9px;overflow:hidden;direction:ltr}
+  #bar{height:100%;width:0;background:linear-gradient(90deg,#22c55e,#eab308,#ef4444);transition:width .05s}
+  #status{text-align:center;color:var(--muted);min-height:2em}
+  small{color:var(--muted)}
+</style>
+</head>
+<body>
+<h1>🎧 سماعت مددگار</h1>
+<div class="sub">موبائل مائک کی آواز فوراً ہیڈ فون میں</div>
+
+<div class="card warn">
+  ⚠️ <b>ضروری:</b> پہلے ہیڈ فون لگائیں، پھر بٹن دبائیں۔ ہیڈ فون کے بغیر موبائل کے اسپیکر سے چلائیں گے تو سیٹی (گونج) بجے گی۔ آواز آہستہ سے شروع کر کے بتدریج بڑھائیں۔
+</div>
+
+<div class="card">
+  <button id="btn">▶ سننا شروع کریں</button>
+  <div id="status">تیار</div>
+  <div class="meter"><div id="bar"></div></div>
+</div>
+
+<div class="card">
+  <label><span>🔊 آواز کی طاقت</span><span id="vv">3×</span></label>
+  <input type="range" id="vol" min="1" max="12" step="0.5" value="3">
+  <label><span>🎼 باریک آواز تیز (باتیں صاف)</span><span id="tv">+6</span></label>
+  <input type="range" id="tre" min="0" max="15" step="1" value="6">
+  <label><span>🔉 شور کم کریں</span><span id="nv">بند</span></label>
+  <input type="range" id="nz" min="0" max="1" step="1" value="0">
+</div>
+
+<div class="card">
+  <label><span>🎤 مائک منتخب کریں</span></label>
+  <select id="mic"><option value="">ڈیفالٹ مائک</option></select>
+  <small>اگر بلوتھ ہیڈ فون کا اپنا مائک خود چن لیا جائے تو یہاں موبائل کا اپنا مائک منتخب کریں۔</small>
+</div>
+
+<div class="card"><small>
+  💡 <b>مشورے:</b><br>
+  • بلوتھ میں تھوڑی تاخیر (0.2 تا 0.3 سیکنڈ) ہوتی ہے۔ تاریں والا ہیڈ فون ہو تو آواز بالکل فوراً آئے گی۔<br>
+  • سننے کے دوران اسکرین کھلی رہے گی۔<br>
+  • بہت تیز آواز کان کے لیے نقصان دہ ہے، ہمیشہ درمیانی آواز رکھیں۔
+</small></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ctx, stream, src, gain, hp, treble, comp, analyser, raf, wake, running = false;
+
+async function listMics(){
+  try{
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cur = $('mic').value;
+    $('mic').innerHTML = '<option value="">ڈیفالٹ مائک</option>';
+    devs.filter(d=>d.kind==='audioinput').forEach((d,i)=>{
+      const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||('مائک '+(i+1)); $('mic').appendChild(o);
+    });
+    $('mic').value = cur;
+  }catch(e){}
+}
+
+async function start(){
+  try{
+    $('status').textContent = 'مائک کی اجازت مانگ رہا ہے...';
+    const audio = {
+      echoCancellation:false, autoGainControl:false,
+      noiseSuppression: $('nz').value==='1',
+      channelCount:1
+    };
+    if($('mic').value) audio.deviceId = {exact:$('mic').value};
+    stream = await navigator.mediaDevices.getUserMedia({audio});
+    await listMics();
+
+    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    await ctx.resume();
+    src = ctx.createMediaStreamSource(stream);
+
+    hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=100;
+    treble = ctx.createBiquadFilter(); treble.type='highshelf'; treble.frequency.value=2000; treble.gain.value=+$('tre').value;
+    gain = ctx.createGain(); gain.gain.value = +$('vol').value;
+    comp = ctx.createDynamicsCompressor();
+    comp.threshold.value=-18; comp.knee.value=12; comp.ratio.value=12; comp.attack.value=0.003; comp.release.value=0.15;
+    analyser = ctx.createAnalyser(); analyser.fftSize=256;
+
+    src.connect(hp); hp.connect(treble); treble.connect(gain); gain.connect(comp); comp.connect(ctx.destination);
+    src.connect(analyser);
+
+    running = true;
+    $('btn').textContent='⏹ بند کریں'; $('btn').classList.add('on');
+    $('status').textContent='🎧 سن رہا ہے — ہیڈ فون میں آواز آ رہی ہے';
+    meter();
+    try{ wake = await navigator.wakeLock.request('screen'); }catch(e){}
+  }catch(e){
+    $('status').textContent='❌ مائک نہیں کھل سکا: ' + (e.name==='NotAllowedError'?'اجازت نہیں ملی۔ براؤزر کی سیٹنگ میں مائک کی اجازت دیں۔':e.message);
+  }
+}
+
+function stop(){
+  running=false; cancelAnimationFrame(raf);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  if(ctx) ctx.close();
+  if(wake){ wake.release(); wake=null; }
+  $('bar').style.width='0';
+  $('btn').textContent='▶ سننا شروع کریں'; $('btn').classList.remove('on');
+  $('status').textContent='بند ہے';
+}
+
+function meter(){
+  const d = new Uint8Array(analyser.fftSize);
+  (function loop(){
+    if(!running) return;
+    analyser.getByteTimeDomainData(d);
+    let m=0; for(const v of d) m=Math.max(m,Math.abs(v-128));
+    $('bar').style.width=Math.min(100,m/128*100*2)+'%';
+    raf=requestAnimationFrame(loop);
+  })();
+}
+
+$('btn').onclick = () => running ? stop() : start();
+$('vol').oninput = e => { $('vv').textContent = e.target.value+'×'; if(gain) gain.gain.value=+e.target.value; };
+$('tre').oninput = e => { $('tv').textContent = '+'+e.target.value; if(treble) treble.gain.value=+e.target.value; };
+$('nz').oninput  = e => { $('nv').textContent = e.target.value==='1'?'چالو':'بند'; if(running){ stop(); start(); } };
+$('mic').onchange = () => { if(running){ stop(); start(); } };
+document.addEventListener('visibilitychange',()=>{ if(running && document.visibilityState==='visible' && !wake){ navigator.wakeLock.request('screen').then(w=>wake=w).catch(()=>{}); }});
+</script>
+</body>
+</html>
