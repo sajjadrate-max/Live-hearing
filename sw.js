@@ -1,6 +1,5 @@
-const CACHE = 'sunno-v1';
-const FILES = ['./', './index.html', './manifest.json',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
+const CACHE = 'sunno-v2';
+const FILES = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
