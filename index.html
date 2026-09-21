@@ -144,6 +144,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let ctx, stream, src, gain, hp, treble, comp, analyser, raf, wake, running = false;
+let watchdog = null, starting = false;
 
 async function listMics(){
   try{
@@ -158,19 +159,34 @@ async function listMics(){
 }
 
 async function start(){
+  if(starting || running) return;
+  starting = true;
   try{
+    // آڈیو کا نظام صارف کے بٹن دبانے کے فوراً بعد، بغیر تاخیر کے بنایا جاتا ہے
+    // ورنہ مائک کی اجازت کے انتظار کے دوران موبائل براؤزر اسے "روک" سکتا ہے
+    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    ctx.resume().catch(()=>{});
+
     $('status').textContent = 'مائک کی اجازت مانگ رہا ہے...';
     const audio = {
       echoCancellation:false, autoGainControl:false,
       noiseSuppression: $('nz').value==='1',
       channelCount:1
     };
-    if($('mic').value) audio.deviceId = {exact:$('mic').value};
-    stream = await navigator.mediaDevices.getUserMedia({audio});
+    // exact کی بجائے ideal، تاکہ منتخب مائک دستیاب نہ ہونے پر بھی شروع ہو جائے
+    if($('mic').value) audio.deviceId = {ideal:$('mic').value};
+
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio});
+    }catch(err){
+      // اگر منتخب مائک نہ ملے تو ڈیفالٹ مائک سے دوبارہ کوشش کریں
+      stream = await navigator.mediaDevices.getUserMedia({audio:{...audio, deviceId:undefined}});
+    }
     await listMics();
 
-    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
-    await ctx.resume();
+    // اگر بٹن دبانے کے بعد تاخیر سے یہاں تک پہنچے تو نظام کو دوبارہ جگائیں
+    if(ctx.state !== 'running'){ try{ await ctx.resume(); }catch(e){} }
+
     src = ctx.createMediaStreamSource(stream);
 
     hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=100;
@@ -183,20 +199,40 @@ async function start(){
     src.connect(hp); hp.connect(treble); treble.connect(gain); gain.connect(comp); comp.connect(ctx.destination);
     src.connect(analyser);
 
+    // مائک بند یا منقطع ہونے پر خود بخود اطلاع دیں
+    stream.getAudioTracks().forEach(t => t.onended = () => {
+      if(running){ stop(); $('status').textContent = '⚠️ مائک منقطع ہو گیا — دوبارہ "سننا شروع کریں" دبائیں'; }
+    });
+
     running = true;
     $('btn').textContent='⏹ بند کریں'; $('btn').classList.add('on');
     $('status').textContent='🎧 سن رہا ہے — ہیڈ فون میں آواز آ رہی ہے';
     meter();
     try{ wake = await navigator.wakeLock.request('screen'); }catch(e){}
+
+    // ہر 2 سیکنڈ میں چیک کریں کہ آواز کا نظام واقعی چل رہا ہے، بند ہو گیا ہو تو خود جگائیں
+    clearInterval(watchdog);
+    watchdog = setInterval(()=>{
+      if(!running) return;
+      if(ctx && ctx.state === 'suspended') ctx.resume().catch(()=>{});
+      if(stream && stream.getAudioTracks().every(t=>t.readyState==='ended')){
+        stop(); $('status').textContent = '⚠️ مائک بند ہو گیا — دوبارہ "سننا شروع کریں" دبائیں';
+      }
+    }, 2000);
   }catch(e){
+    if(ctx){ try{ ctx.close(); }catch(_){} ctx=null; }
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
     $('status').textContent='❌ مائک نہیں کھل سکا: ' + (e.name==='NotAllowedError'?'اجازت نہیں ملی۔ براؤزر کی سیٹنگ میں مائک کی اجازت دیں۔':e.message);
+  } finally {
+    starting = false;
   }
 }
 
 function stop(){
-  running=false; cancelAnimationFrame(raf);
+  running=false; cancelAnimationFrame(raf); clearInterval(watchdog); watchdog=null;
   if(stream) stream.getTracks().forEach(t=>t.stop());
   if(ctx) ctx.close();
+  ctx=null; stream=null;
   if(wake){ wake.release(); wake=null; }
   $('bar').style.width='0';
   $('btn').textContent='▶ سننا شروع کریں'; $('btn').classList.remove('on');
@@ -219,7 +255,12 @@ $('vol').oninput = e => { $('vv').textContent = e.target.value+'×'; if(gain) ga
 $('tre').oninput = e => { $('tv').textContent = '+'+e.target.value; if(treble) treble.gain.value=+e.target.value; };
 $('nz').oninput  = e => { $('nv').textContent = e.target.value==='1'?'چالو':'بند'; if(running){ stop(); start(); } };
 $('mic').onchange = () => { if(running){ stop(); start(); } };
-document.addEventListener('visibilitychange',()=>{ if(running && document.visibilityState==='visible' && !wake){ navigator.wakeLock.request('screen').then(w=>wake=w).catch(()=>{}); }});
+document.addEventListener('visibilitychange',()=>{
+  if(running && document.visibilityState==='visible'){
+    if(!wake){ navigator.wakeLock.request('screen').then(w=>wake=w).catch(()=>{}); }
+    if(ctx && ctx.state==='suspended'){ ctx.resume().catch(()=>{}); }
+  }
+});
 </script>
 </body>
 </html>
