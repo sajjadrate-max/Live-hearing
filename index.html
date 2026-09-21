@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>سماعت مددگار</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1b2d">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="سماعت مددگار">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
   :root{--bg:#0f1b2d;--card:#182a44;--accent:#22c55e;--stop:#ef4444;--text:#f1f5f9;--muted:#94a3b8}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -30,11 +38,42 @@
   details ol,details ul{margin:0;padding-right:22px}
   details li{margin-bottom:6px}
   details.safe summary::before{color:#f59e0b}
+  #installCard{display:none;border:2px solid var(--accent)}
+  #installBtn{width:100%;font-size:1.15rem;font-family:inherit;padding:14px;border:none;border-radius:14px;background:var(--accent);color:#04210f;font-weight:bold;margin-top:8px}
+  #iosHint{display:none;margin-top:10px;font-size:.95rem;color:#dbe4ef;line-height:1.9}
+  #permCard{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .pillWrap{display:flex;align-items:center;gap:10px;font-size:1.05rem;font-weight:bold}
+  .switch{position:relative;display:inline-block;width:56px;height:30px;flex-shrink:0}
+  .switch .knob{position:absolute;inset:0;background:#4b5f7a;border-radius:30px;transition:background .2s}
+  .switch .knob::before{content:"";position:absolute;height:24px;width:24px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s}
+  .switch.on .knob{background:var(--accent)}
+  .switch.on .knob::before{transform:translateX(-26px)}
+  #permBtn{font-size:1rem;font-family:inherit;padding:10px 16px;border:none;border-radius:12px;background:var(--accent);color:#04210f;font-weight:bold}
+  #permBtn.hide{display:none}
+  #permNote{width:100%;font-size:.9rem;color:var(--muted)}
 </style>
 </head>
 <body>
 <h1>🎧 سماعت مددگار</h1>
 <div class="sub">موبائل مائک کی آواز فوراً ہیڈ فون میں</div>
+
+<div class="card" id="permCard">
+  <div class="pillWrap">
+    <span class="switch" id="permSwitch"><span class="knob"></span></span>
+    <span id="permText">🎤 مائک اجازت: چیک ہو رہی ہے...</span>
+  </div>
+  <button id="permBtn">اجازت دیں</button>
+  <div id="permNote"></div>
+</div>
+
+<div class="card" id="installCard">
+  📲 اس ویب سائٹ کو اپنے موبائل میں ایپ کی طرح انسٹال کریں، تاکہ ہوم اسکرین سے فوراً کھلے۔
+  <button id="installBtn">⬇ ایپ انسٹال کریں</button>
+  <div id="iosHint">
+    آئی فون میں انسٹال کرنے کا طریقہ:<br>
+    نیچے شیئر کے بٹن <b>⬆️</b> پر دبائیں، پھر <b>"Add to Home Screen"</b> منتخب کریں۔
+  </div>
+</div>
 
 <div class="card warn">
   ⚠️ <b>ضروری:</b> پہلے ہیڈ فون لگائیں، پھر بٹن دبائیں۔ ہیڈ فون کے بغیر موبائل کے اسپیکر سے چلائیں گے تو سیٹی (گونج) بجے گی۔ آواز آہستہ سے شروع کر کے بتدریج بڑھائیں۔
@@ -183,6 +222,7 @@ async function start(){
       stream = await navigator.mediaDevices.getUserMedia({audio:{...audio, deviceId:undefined}});
     }
     await listMics();
+    setPermUI('granted');
 
     // اگر بٹن دبانے کے بعد تاخیر سے یہاں تک پہنچے تو نظام کو دوبارہ جگائیں
     if(ctx.state !== 'running'){ try{ await ctx.resume(); }catch(e){} }
@@ -223,6 +263,7 @@ async function start(){
     if(ctx){ try{ ctx.close(); }catch(_){} ctx=null; }
     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
     $('status').textContent='❌ مائک نہیں کھل سکا: ' + (e.name==='NotAllowedError'?'اجازت نہیں ملی۔ براؤزر کی سیٹنگ میں مائک کی اجازت دیں۔':e.message);
+    if(e.name==='NotAllowedError') setPermUI('denied');
   } finally {
     starting = false;
   }
@@ -261,6 +302,86 @@ document.addEventListener('visibilitychange',()=>{
     if(ctx && ctx.state==='suspended'){ ctx.resume().catch(()=>{}); }
   }
 });
+
+// ---- مائک اجازت کا بیج (آن/آف) ----
+function setPermUI(state){
+  const sw = $('permSwitch'), txt = $('permText'), btn = $('permBtn'), note = $('permNote');
+  if(state === 'granted'){
+    sw.classList.add('on');
+    txt.textContent = '🎤 مائک اجازت: آن ✅';
+    btn.classList.add('hide');
+    note.textContent = '';
+    try{ localStorage.setItem('micPermState','granted'); }catch(e){}
+  } else if(state === 'denied'){
+    sw.classList.remove('on');
+    txt.textContent = '🎤 مائک اجازت: آف ❌';
+    btn.classList.add('hide');
+    note.textContent = 'اجازت بند ہے۔ براؤزر کی سیٹنگ میں اس سائٹ کے لیے مائک کی اجازت آن کریں۔';
+  } else {
+    sw.classList.remove('on');
+    txt.textContent = '🎤 مائک اجازت: آف';
+    btn.classList.remove('hide');
+    note.textContent = '';
+  }
+}
+
+async function initPermUI(){
+  if(navigator.permissions && navigator.permissions.query){
+    try{
+      const status = await navigator.permissions.query({name:'microphone'});
+      setPermUI(status.state);
+      status.onchange = () => setPermUI(status.state);
+      return;
+    }catch(e){}
+  }
+  // جن براؤزرز میں Permissions API نہیں چلتی، وہاں پچھلی حالت یاد رکھی جاتی ہے
+  let remembered = 'prompt';
+  try{ remembered = localStorage.getItem('micPermState') || 'prompt'; }catch(e){}
+  setPermUI(remembered);
+}
+
+$('permBtn').onclick = async () => {
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({audio:true});
+    s.getTracks().forEach(t=>t.stop());
+    setPermUI('granted');
+  }catch(e){
+    setPermUI(e.name==='NotAllowedError' ? 'denied' : 'prompt');
+  }
+};
+
+initPermUI();
+
+// ---- ایپ کی طرح انسٹال کرنے کا نظام ----
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstall = e;
+  if(!isStandalone()) $('installCard').style.display = 'block';
+});
+
+$('installBtn') && ($('installBtn').onclick = async () => {
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  const choice = await deferredInstall.userChoice.catch(()=>null);
+  deferredInstall = null;
+  if(choice && choice.outcome === 'accepted') $('installCard').style.display = 'none';
+});
+
+window.addEventListener('appinstalled', ()=>{ $('installCard').style.display = 'none'; });
+
+if(!isStandalone() && isIOS()){
+  $('installCard').style.display = 'block';
+  $('installBtn').style.display = 'none';
+  $('iosHint').style.display = 'block';
+}
 </script>
 </body>
 </html>

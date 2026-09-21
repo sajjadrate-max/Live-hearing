@@ -1,0 +1,18 @@
+{
+  "name": "سماعت مددگار",
+  "short_name": "سماعت مددگار",
+  "description": "موبائل مائک کی آواز فوراً ہیڈ فون میں سنیں",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1b2d",
+  "theme_color": "#0f1b2d",
+  "dir": "rtl",
+  "lang": "ur",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
