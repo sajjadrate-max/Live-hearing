@@ -258,15 +258,20 @@ async function start(){
     src.connect(hp); hp.connect(treble); treble.connect(gain); gain.connect(comp);
     src.connect(analyser);
 
-    // آواز کو براہ راست ctx.destination کی بجائے ایک <audio> عنصر کے ذریعے بھیجا جاتا ہے،
-    // تاکہ مائک استعمال ہونے کے دوران Android میں آواز کا رخ (روٹنگ) درست رہے
-    // اور ضرورت پڑنے پر ہیڈ فون کو واضح طور پر منتخب کیا جا سکے
-    outDest = ctx.createMediaStreamDestination();
-    comp.connect(outDest);
-    const outEl = $('outAudio');
-    outEl.srcObject = outDest.stream;
-    try{ await outEl.play(); }catch(e){}
-    if(outSupported && $('out').value) await applyOutputSink();
+    if(outSupported && $('out').value){
+      // صرف اس وقت جب آپ خود کوئی مخصوص ہیڈ فون منتخب کریں، آواز ایک اضافی
+      // <audio> عنصر کے ذریعے بھیجی جاتی ہے تاکہ اسی آلے کو واضح طور پر چنا جا سکے۔
+      // یہ راستہ تھوڑی تاخیر پیدا کرتا ہے، اس لیے ڈیفالٹ حالت میں استعمال نہیں ہوتا۔
+      outDest = ctx.createMediaStreamDestination();
+      comp.connect(outDest);
+      const outEl = $('outAudio');
+      outEl.srcObject = outDest.stream;
+      try{ await outEl.play(); }catch(e){}
+      await applyOutputSink();
+    } else {
+      // ڈیفالٹ اور تیز ترین راستہ — کم سے کم تاخیر کے ساتھ
+      comp.connect(ctx.destination);
+    }
 
     // مائک بند یا منقطع ہونے پر خود بخود اطلاع دیں
     stream.getAudioTracks().forEach(t => t.onended = () => {
@@ -327,7 +332,7 @@ $('vol').oninput = e => { $('vv').textContent = e.target.value+'×'; if(gain) ga
 $('tre').oninput = e => { $('tv').textContent = '+'+e.target.value; if(treble) treble.gain.value=+e.target.value; };
 $('nz').oninput  = e => { $('nv').textContent = e.target.value==='1'?'چالو':'بند'; if(running){ stop(); start(); } };
 $('mic').onchange = () => { if(running){ stop(); start(); } };
-$('out').onchange = () => { if(running) applyOutputSink(); };
+$('out').onchange = () => { if(running){ stop(); start(); } };
 document.addEventListener('visibilitychange',()=>{
   if(running && document.visibilityState==='visible'){
     if(!wake){ navigator.wakeLock.request('screen').then(w=>wake=w).catch(()=>{}); }
